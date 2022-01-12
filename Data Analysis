@@ -81,8 +81,8 @@ layout=dict(title=' Avistamientos de Ovnis en el Mundo',
                      showlakes= True,
                      lakecolor='rgb(85,173,240)')
             )
- choromap=go.Figure(data=[data],layout=layout)
- choromap.show()
+choromap=go.Figure(data=[data],layout=layout)
+choromap.show()
  
 plt.figure(figsize=(10,6))
 plt.hist(x = df['duration (seconds)'], log=True)
