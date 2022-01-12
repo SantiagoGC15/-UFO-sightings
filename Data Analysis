@@ -1,0 +1,359 @@
+!pip install plotly
+!pip install plotly-geo
+!pip install geopandas --upgrade
+!pip install pyshp==1.2.10
+!pip install shapely==1.6.3
+!pip install chart_studio
+!pip install -q kaggle
+
+import pandas as pd
+import numpy as np
+import matplotlib.pylab as plt
+from shapely.geometry import Point
+import seaborn as sns
+import geopandas as gpd
+from geopandas import GeoDataFrame
+import plotly as py
+import plotly.figure_factory as ff
+import plotly.graph_objs as go
+from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
+
+from google.colab import files
+files.upload()
+
+! mkdir ~/.kaggle
+! cp kaggle.json ~/.kaggle/
+! cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+! kaggle datasets list
+
+! kaggle datasets download -d NUFORC/ufo-sightings
+! unzip ufo-sightings.zip
+
+df=pd.read_csv('/content/scrubbed.csv', delimiter=',', skiprows=0, low_memory=False)
+
+df.dropna(subset = ['country'], inplace=True)
+df.dropna(subset = ['state'], inplace=True)
+df
+
+df['latitude']= df['latitude'].map(lambda x: float(x)) #pasar de object a float
+
+puntos = [Point(xy) for xy in zip(df['longitude '], df['latitude'])]
+gdf = GeoDataFrame(df, geometry=puntos)   
+gdf.head()
+
+#Fecha
+df["datetime"] = df["datetime"].apply(lambda x: x.replace("24:00", "00:00"))
+df['datetime'] = pd.to_datetime(df['datetime'])
+#pasar variabvle duración a numeric
+df['duration (seconds)'] = pd.to_numeric(df['duration (seconds)'],errors='coerce')
+#crear año en una columba separada
+df['year']=df['datetime'].dt.year
+
+#Mapa con geopandas
+world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+ax = world.plot(figsize=(10, 6),color='gray', edgecolor='white')
+ax.set_xlabel('Longitud')
+ax.set_ylabel('Latitud')
+gdf.plot(ax=ax, color='blue')
+plt.title('Mapa de avistamiento de ovnis en todo el mundo')
+plt.show()
+
+numavisw = pd.DataFrame(df.groupby('country')['country'].count())
+numavisw['Número'] = numavisw['country']
+x = pd.Series(numavisw.index).apply(lambda x: x.upper())
+numavisw.index = np.arange(0, numavisw.shape[0])
+numavisw['País'] = x
+numavisw.drop('country', axis=1, inplace=True)
+numavisw
+
+data=dict(type='choropleth',
+          colorscale='Tealgrn',
+          z=numavisw['Número'],
+          locations = ['Australia','Canada','Great Britain','USA'],
+          locationmode = 'country names',
+          text=numavisw['País'],
+          marker=dict(line=dict(color='rgb(0,0,0)',width=1)),
+          colorbar={'title': 'Número de avistamientos de Ovnis'})
+
+layout=dict(title=' Avistamientos de Ovnis en el Mundo',
+            geo=dict(scope='world',
+                     showlakes= True,
+                     lakecolor='rgb(85,173,240)')
+            )
+ choromap=go.Figure(data=[data],layout=layout)
+ choromap.show()
+ 
+plt.figure(figsize=(10,6))
+plt.hist(x = df['duration (seconds)'], log=True)
+plt.title('Duración de la visibilidad OVNI')
+plt.ylabel('Cantidad(Registro)')
+plt.xlabel('Tiempo(seg)')
+plt.show()
+
+sns.set(style='darkgrid')
+plt.figure(figsize=(10,6))
+ax = sns.countplot(y='shape', data=df, \
+                   order = df['shape'].value_counts().index).\
+set_title('Clasificación según la frecuencia de las figuras vistas en el cielo')
+
+plt.ylabel('Cantidad')
+plt.xlabel('Tipo de forma')
+plt.show()
+
+sns.set(style='darkgrid')
+plt.figure(figsize=(10,6))
+ax = sns.countplot(x='country', 
+                   data=df,
+                  order = df['country'].value_counts().index, log=True).\
+set_title('Número de avistamientos por país')
+
+plt.ylabel('Cantidad')
+plt.xlabel('País')
+plt.show()
+
+año = pd.DataFrame(df['year'].value_counts()).reset_index()
+plt.figure(figsize=(10,6))
+plt.scatter(x=año['index'], y=año['year'])
+plt.title('Cantidad de avistamientos de ovnis por año')
+plt.xlabel('Año')
+plt.ylabel('Cantidad')
+plt.show()
+
+tiempo = df[['year','duration (seconds)']]
+tiemposeg = pd.DataFrame(tiempo.groupby('year')['duration (seconds)'].mean())
+tiempomin = tiemposeg['duration (seconds)']/60
+plt.figure(figsize=(10,6))
+plt.plot(tiempomin)
+plt.ylabel('Minutos')
+plt.xlabel('Años')
+plt.title('Tiempo promedio de permanencia de avistamientos')
+plt.show()
+
+meses=[0]*12
+estaciones={'Invierno':0,'Primavera':0,'Verano':0,'Otoño':0}
+horac=[0]*24
+tiempodia={'Noche': 0,'Amanecer': 0,'Día': 0,'Anochecer':0}
+for i in df['datetime']:
+    mes=i.month
+    meses[mes-1]+=1 
+    if mes in (1,2,3):
+        estaciones['Invierno']+=1
+    elif mes in (4,5,6):
+        estaciones['Primavera']+=1
+    elif mes in (7,8,9):
+        estaciones['Verano']+=1
+    elif mes in (10,11,12):
+        estaciones['Otoño']+=1
+        
+    hora = i.hour
+    horac[hora]+=1
+    if hora in (21,22,23,0,1,2):
+        tiempodia['Noche']+=1
+    elif hora in range(3,9):
+        tiempodia['Amanecer']+=1
+    elif hora in range(9,15):
+        tiempodia['Día']+=1
+    elif hora in range(15,21):
+        tiempodia['Anochecer']+=1
+
+plt.figure(figsize=(10,6))
+plt.bar(estaciones.keys(), estaciones.values())
+plt.title('Avistamiento de ovnis por Estaciones')
+plt.ylabel('Cantidad de avistamientos')
+plt.show()
+
+plt.figure(figsize=(10,6))
+plt.bar(tiempodia.keys(), tiempodia.values())
+plt.title('Avistamiento de ovnis por hora del día')
+plt.ylabel('Cantidad de avistamientos')
+plt.show()
+
+## EDA USA
+
+numavis = pd.DataFrame(df.groupby('state')['state'].count())
+numavis['Número'] = numavis['state']
+x = pd.Series(numavis.index).apply(lambda x: x.upper())
+numavis.index = np.arange(0, numavis.shape[0])
+numavis['Estado'] = x
+numavis.drop('state', axis=1, inplace=True)
+numavis
+
+data=dict(type='choropleth',
+          colorscale='Tealgrn',
+          z=numavis['Número'],
+          locations=numavis['Estado'],
+          locationmode= 'USA-states',
+          text=numavis['Estado'],
+          marker=dict(line=dict(color='rgb(255,255,255)',width=1)),
+          colorbar={'title': 'Número de avistamientos de Ovnis'})
+          
+layout=dict(title=' Avistamientos de Ovnis en USA',
+            geo=dict(scope='usa',
+                     showlakes= True,
+                     lakecolor='rgb(85,173,240)')
+            )
+choromap=go.Figure(data=[data],layout=layout)
+choromap.show()
+
+ax = sns.catplot(y='state',
+            data=df,
+            kind='count',
+            height=10,
+            order = df['state'].value_counts().index)
+
+ax.fig.suptitle('Número de avistamientos por estado', x=0.5, y=1)
+
+plt.ylabel('Estado')
+plt.xlabel('Cantidad')
+plt.show()
+
+usa =df.loc[(df['country'] == 'us')]#Datos solo de USA
+
+año = pd.DataFrame(usa['year'].value_counts()).reset_index()
+plt.figure(figsize=(10,6))
+plt.scatter(x=año['index'], y=año['year'])
+plt.title('Cantidad de avistamientos de ovnis por año en USA')
+plt.xlabel('Año')
+plt.ylabel('Cantidad')
+plt.show()
+
+tiempo = usa[['year','duration (seconds)']]
+tiemposeg = pd.DataFrame(tiempo.groupby('year')['duration (seconds)'].mean())
+tiempomin = tiemposeg['duration (seconds)']/60
+plt.figure(figsize=(10,6))
+plt.plot(tiempomin)
+plt.ylabel('Minutos')
+plt.xlabel('Años')
+plt.title('Tiempo promedio de permanencia de avistamientos en USA')
+plt.show()
+
+plt.figure(figsize=(10,6))
+ax = sns.countplot(y='shape', 
+                   data=usa,
+                   order = usa['shape'].value_counts().index).\
+set_title('Clasificación según la frecuencia de las figuras vistas en el cielo de USA')
+
+plt.ylabel('Cantidad')
+plt.xlabel('Tipo de forma')
+plt.show()
+
+meses=[0]*12
+estaciones={'Invierno':0,'Primavera':0,'Verano':0,'Otoño':0}
+horac=[0]*24
+tiempodia={'Noche': 0,'Amanecer': 0,'Día': 0,'Anochecer':0}
+for i in usa['datetime']:
+    mes=i.month
+    meses[mes-1]+=1 
+    if mes in (1,2,3):
+        estaciones['Invierno']+=1
+    elif mes in (4,5,6):
+        estaciones['Primavera']+=1
+    elif mes in (7,8,9):
+        estaciones['Verano']+=1
+    elif mes in (10,11,12):
+        estaciones['Otoño']+=1
+        
+    hora = i.hour
+    horac[hora]+=1
+    if hora in (21,22,23,0,1,2):
+        tiempodia['Noche']+=1
+    elif hora in range(3,9):
+        tiempodia['Amanecer']+=1
+    elif hora in range(9,15):
+        tiempodia['Día']+=1
+    elif hora in range(15,21):
+        tiempodia['Anochecer']+=1
+
+plt.figure(figsize=(10,6))
+plt.bar(estaciones.keys(), estaciones.values())
+plt.title('Avistamiento de ovnis por Estaciones en USA')
+plt.ylabel('Cantidad de avistamientos')
+plt.show()
+
+plt.figure(figsize=(10,6))
+plt.bar(tiempodia.keys(), tiempodia.values())
+plt.title('Avistamiento de ovnis por hora del día en USA')
+plt.ylabel('Cantidad de avistamientos')
+plt.show()
+
+## EDA CALIFORNIA
+
+usa =df.loc[(df['country'] == 'us')]#Datos solo de USA
+cal=usa.loc[(df['state'] == 'ca')]#Datos solo de California
+cal
+
+plt.figure(figsize=(10,6))
+plt.scatter(x=cal['longitude '], y=cal['latitude'])
+plt.title('Avistamiento de ovnis en California')
+plt.xlabel('Longitud')
+plt.ylabel('Latitud')
+plt.show()
+
+año = pd.DataFrame(cal['year'].value_counts()).reset_index()
+plt.figure(figsize=(10,6))
+plt.scatter(x=año['index'], y=año['year'])
+plt.title('Cantidad de avistamientos de ovnis por año en California')
+plt.xlabel('Año')
+plt.ylabel('Cantidad')
+plt.show()
+
+tiempo = cal[['year','duration (seconds)']]
+tiemposeg = pd.DataFrame(tiempo.groupby('year')['duration (seconds)'].mean())
+tiempomin = tiemposeg['duration (seconds)']/60
+plt.figure(figsize=(10,6))
+plt.plot(tiempomin)
+plt.ylabel('Minutos')
+plt.xlabel('Años')
+plt.title('Tiempo promedio de permanencia de avistamientos en USA')
+plt.show()
+
+plt.figure(figsize=(10,6))
+ax = sns.countplot(y='shape', 
+                   data=cal,
+                   order = cal['shape'].value_counts().index).\
+set_title('Clasificación según la frecuencia de las figuras vistas en el cielo en California')
+
+plt.ylabel('Cantidad')
+plt.xlabel('Tipo de forma')
+plt.show()
+
+meses=[0]*12
+estaciones={'Invierno':0,'Primavera':0,'Verano':0,'Otoño':0}
+horac=[0]*24
+tiempodia={'Noche': 0,'Amanecer': 0,'Día': 0,'Anochecer':0}
+for i in cal['datetime']:
+    mes=i.month
+    meses[mes-1]+=1 
+    if mes in (1,2,3):
+        estaciones['Invierno']+=1
+    elif mes in (4,5,6):
+        estaciones['Primavera']+=1
+    elif mes in (7,8,9):
+        estaciones['Verano']+=1
+    elif mes in (10,11,12):
+        estaciones['Otoño']+=1
+        
+    hora = i.hour
+    horac[hora]+=1
+    if hora in (21,22,23,0,1,2):
+        tiempodia['Noche']+=1
+    elif hora in range(3,9):
+        tiempodia['Amanecer']+=1
+    elif hora in range(9,15):
+        tiempodia['Día']+=1
+    elif hora in range(15,21):
+        tiempodia['Anochecer']+=1
+
+plt.figure(figsize=(10,6))
+plt.bar(estaciones.keys(), estaciones.values())
+plt.title('Avistamiento de ovnis por Estaciones en California')
+plt.ylabel('Cantidad de avistamientos')
+plt.show()
+
+plt.figure(figsize=(10,6))
+plt.bar(tiempodia.keys(), tiempodia.values())
+plt.title('Avistamiento de ovnis por hora del día en California')
+plt.ylabel('Cantidad de avistamientos')
+plt.show()
+
